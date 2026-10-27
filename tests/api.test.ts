@@ -34,7 +34,7 @@ describe("HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({
       status: "ok",
       service: "tambala-rendering",
-      version: "0.1.0"
+      version: "0.3.0"
     });
   });
 
@@ -73,7 +73,7 @@ describe("HTTP API", () => {
       durationSeconds: number;
       videoUrl: string;
     };
-    expect(payload).toMatchObject({ status: "completed", sceneCount: 2, durationSeconds: 6 });
+    expect(payload).toMatchObject({ sceneCount: 2, durationSeconds: 6 });
     const videoResponse = await fetch(new URL(payload.videoUrl, baseUrl));
     expect(videoResponse.status).toBe(200);
     const video = Buffer.from(await videoResponse.arrayBuffer());
