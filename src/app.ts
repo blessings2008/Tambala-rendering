@@ -60,9 +60,15 @@ export function createApp() {
     return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
   };
 
+  // FFmpeg renders are memory-intensive. On small instances, allow only one
+  // render job at a time rather than letting concurrent jobs OOM-kill the service.
+  let renderInProgress = false;
+
   app.post("/v1/renders", requireApiKey, async (req, res) => {
     const parsed = renderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "INVALID_RENDER_REQUEST", details: parsed.error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })) });
+    if (renderInProgress) return res.status(429).json({ error: "RENDER_BUSY", message: "Another video is being rendered. Please try again shortly." });
+    renderInProgress = true;
     try {
       const input = parsed.data;
       const result = input.scenes
@@ -75,6 +81,8 @@ export function createApp() {
     } catch (error) {
       console.error("Render failed:", error instanceof Error ? error.message : "unknown error");
       return res.status(500).json({ error: "RENDER_FAILED", message: "The video could not be rendered." });
+    } finally {
+      renderInProgress = false;
     }
   });
 
