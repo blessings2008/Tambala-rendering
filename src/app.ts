@@ -71,6 +71,21 @@ export function createApp() {
     });
   });
 
+  // Protect render creation and downloads when deployed publicly.
+  // Configure RENDER_API_KEY in production; health checks remain public.
+  const apiKey = process.env.RENDER_API_KEY;
+  app.use(["/v1/renders"], (req, res, next) => {
+    if (process.env.NODE_ENV === "production" && !apiKey) {
+      return res.status(503).json({ error: "RENDER_API_KEY_NOT_CONFIGURED" });
+    }
+    if (!apiKey) return next();
+    const authorization = req.header("authorization") ?? "";
+    if (authorization !== `Bearer ${apiKey}`) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+    return next();
+  });
+
   app.post("/v1/renders", async (req, res) => {
     const parsed = renderSchema.safeParse(req.body);
     if (!parsed.success) {
