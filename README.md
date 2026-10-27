@@ -13,7 +13,7 @@
 - Optional looping background audio from base64 MP3, WAV, M4A, AAC, or OGG input; audio is encoded to AAC in the final MP4.
 - Health endpoint, request validation, Docker image, and CI checks.
 
-The rendering foundation now supports assembling a short multi-scene video. AI-generated footage, music, transitions, uploaded media, templates, queued jobs, and prompt-to-video generation remain future capabilities.
+The rendering foundation now supports assembling short multi-scene videos and adding a supplied audio track. AI-generated footage, transitions, uploaded media, templates, queued jobs, and prompt-to-video generation remain future capabilities.
 
 ## Run locally
 
