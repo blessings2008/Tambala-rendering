@@ -7,7 +7,7 @@ import { renderTextVideo } from "./render";
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "32kb" }));
+  app.use(express.json({ limit: "7mb" }));
 
   const configuredMax = Number.parseInt(process.env.MAX_RENDER_SECONDS ?? "30", 10);
   const maxDuration = Number.isFinite(configuredMax) && configuredMax >= 3 ? configuredMax : 30;
@@ -15,7 +15,8 @@ export function createApp() {
     title: z.string().trim().min(1).max(160),
     subtitle: z.string().trim().max(240).optional(),
     durationSeconds: z.number().int().min(3).max(maxDuration).default(8),
-    format: z.enum(["vertical", "square", "landscape"]).default("vertical")
+    format: z.enum(["vertical", "square", "landscape"]).default("vertical"),
+    backgroundImageDataUrl: z.string().max(7_000_000).regex(/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/).optional()
   });
 
   app.get("/health", (_req, res) => {
