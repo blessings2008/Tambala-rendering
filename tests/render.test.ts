@@ -68,6 +68,21 @@ describe("FFmpeg rendering", () => {
     expect(fileInfo.size).toBeGreaterThan(1_000);
     expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
   }, 30_000);
+  it("supports the paper and neon visual templates", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-templates-"));
+    temporaryDirectories.push(outputDirectory);
+    for (const template of ["paper", "neon"] as const) {
+      const result = await renderTextVideo({
+        title: `${template} template`,
+        durationSeconds: 3,
+        format: "square",
+        template
+      }, outputDirectory);
+      const file = await readFile(result.filePath);
+      expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
+    }
+  }, 60_000);
+
   it("adds a looping audio track to a rendered MP4", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-audio-"));
     temporaryDirectories.push(outputDirectory);
