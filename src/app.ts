@@ -27,8 +27,8 @@ export function createApp() {
     backgroundImageDataUrl: imageSchema.optional(),
     scenes: z.array(sceneSchema).min(2).max(8).optional()
   }).superRefine((value, context) => {
-    if (value.scenes && value.title) {
-      context.addIssue({ code: "custom", path: ["title"], message: "Use either title fields or scenes, not both." });
+    if (value.scenes && (value.title !== undefined || value.subtitle !== undefined || value.backgroundImageDataUrl !== undefined)) {
+      context.addIssue({ code: "custom", path: ["scenes"], message: "Use either single-scene fields or scenes, not both." });
     } else if (!value.scenes && !value.title) {
       context.addIssue({ code: "custom", path: ["title"], message: "A title or at least two scenes is required." });
     }
