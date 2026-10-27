@@ -173,7 +173,7 @@ export async function renderScenesVideo(
 
 
 function decodeAudio(dataUrl: AudioDataUrl): { bytes: Buffer; extension: string } {
-  const match = /^data:audio\\/(mpeg|mp3|wav|x-wav|mp4|aac|ogg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  const match = /^data:audio\/(mpeg|mp3|wav|x-wav|mp4|aac|ogg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
   if (!match) throw new Error("Audio must be a base64 MP3, WAV, M4A, AAC, or OGG data URL.");
   const bytes = Buffer.from(match[2], "base64");
   if (bytes.length === 0 || bytes.length > 5 * 1024 * 1024) {
