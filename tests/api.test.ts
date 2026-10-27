@@ -58,6 +58,24 @@ describe("HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({ error: "INVALID_RENDER_REQUEST" });
   });
 
+  it("rejects requests mixing single-scene fields with a scene list", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}/v1/renders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "This should not be mixed",
+        format: "vertical",
+        scenes: [
+          { title: "Opening", durationSeconds: 3 },
+          { title: "Ending", durationSeconds: 3 }
+        ]
+      })
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "INVALID_RENDER_REQUEST" });
+  });
+
   it("rejects malformed render IDs", async () => {
     const baseUrl = await startServer();
     const response = await fetch(`${baseUrl}/v1/renders/not-a-uuid/video`);
