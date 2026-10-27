@@ -10,6 +10,7 @@
 - Text-based video scenes with a title and optional subtitle.
 - Scene-based composition: combine 2–8 scenes into one MP4, each with its own duration and optional background image.
 - Optional base64 PNG, JPEG, or WebP background image (up to 5 MB), cropped to fill the selected format.
+- Optional looping background audio from base64 MP3, WAV, M4A, AAC, or OGG input; audio is encoded to AAC in the final MP4.
 - Health endpoint, request validation, Docker image, and CI checks.
 
 The rendering foundation now supports assembling a short multi-scene video. AI-generated footage, music, transitions, uploaded media, templates, queued jobs, and prompt-to-video generation remain future capabilities.
@@ -45,7 +46,8 @@ Content-Type: application/json
   "subtitle": "Made with Tambala",
   "durationSeconds": 8,
   "format": "vertical",
-  "backgroundImageDataUrl": "data:image/png;base64,..."
+  "backgroundImageDataUrl": "data:image/png;base64,...",
+  "audioDataUrl": "data:audio/mpeg;base64,..."
 }
 ```
 
@@ -65,9 +67,9 @@ Send 2–8 scenes. Each scene has its own title, optional subtitle, duration, an
 }
 ```
 
-Supported formats: `vertical`, `square`, `landscape`. Scene durations must be at least 3 seconds. The combined duration cannot exceed the configured maximum.
+Supported formats: `vertical`, `square`, `landscape`. Scene durations must be at least 3 seconds. The combined duration cannot exceed the configured maximum. You can add `audioDataUrl` at the top level to loop a supported audio track under the full video. Audio and image assets share a combined request limit of approximately 5 MB.
 
-A successful response includes a render ID, total duration, scene count, and relative `videoUrl`. Download it with `GET /v1/renders/{id}/video`.
+A successful response includes a render ID, total duration, scene count, whether audio was included, and relative `videoUrl`. Download it with `GET /v1/renders/{id}/video`.
 
 Example with curl:
 
@@ -91,12 +93,12 @@ The container installs FFmpeg and the DejaVu font used by the title renderer.
 - Rendering is synchronous and intended for short test jobs.
 - Render files are stored on the service's local filesystem. Ephemeral hosting filesystems can be cleared on restart/redeploy, so this is not yet durable production storage.
 - There is no authentication or public multi-tenant protection yet. Keep the service private until API keys, rate limits, job quotas, and storage lifecycle controls are implemented.
-- This creates designed text scenes and can optionally use supplied background images. It does not yet generate moving footage from a text prompt.
+- This creates designed text scenes, can use supplied background images, and can add a supplied audio track. It does not yet generate moving footage or narration from a text prompt.
 
 ## Next milestones
 
 1. Add a job queue and progress/status endpoint.
-2. Add audio tracks, transitions, and reusable scene templates.
+2. Add transitions and reusable scene templates.
 3. Add durable object storage and signed download links.
 4. Add an authenticated internal API for Tambala agents and products.
 5. Explore AI scene generation as a separate optional pipeline.
