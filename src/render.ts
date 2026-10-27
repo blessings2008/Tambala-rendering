@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -10,6 +10,7 @@ export interface RenderRequest {
   subtitle?: string;
   durationSeconds: number;
   format: VideoFormat;
+  backgroundImageDataUrl?: string;
 }
 
 export interface RenderResult {
@@ -42,6 +43,17 @@ function runFfmpeg(args: string[], ffmpegPath: string): Promise<void> {
   });
 }
 
+function decodeBackgroundImage(dataUrl: string): { bytes: Buffer; extension: string } {
+  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw new Error("Background image must be a base64 PNG, JPEG, or WebP data URL.");
+  const bytes = Buffer.from(match[2], "base64");
+  if (bytes.length === 0 || bytes.length > 5 * 1024 * 1024) {
+    throw new Error("Background image must be between 1 byte and 5 MB.");
+  }
+  const extension = match[1] === "jpeg" ? "jpg" : match[1];
+  return { bytes, extension };
+}
+
 export async function renderTextVideo(
   input: RenderRequest,
   outputDirectory = process.env.RENDER_OUTPUT_DIR ?? "./renders",
@@ -52,25 +64,36 @@ export async function renderTextVideo(
   const outputDir = path.resolve(outputDirectory);
   await mkdir(outputDir, { recursive: true });
 
-  // Text is written to files instead of interpolated into an FFmpeg filter,
-  // avoiding filter-escaping problems with user-supplied punctuation.
   const titlePath = path.join(outputDir, `${id}-title.txt`);
   const subtitlePath = path.join(outputDir, `${id}-subtitle.txt`);
   const filePath = path.join(outputDir, `${id}.mp4`);
+  const fontPath = process.env.FONT_PATH ?? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+  let imagePath: string | undefined;
+
   await writeFile(titlePath, input.title, "utf8");
   await writeFile(subtitlePath, input.subtitle ?? "", "utf8");
 
-  const font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-  const filter = [
-    `drawtext=fontfile=${font}:textfile=${titlePath}:fontcolor=white:fontsize=${Math.max(34, Math.round(width * 0.055))}:x=(w-text_w)/2:y=(h-text_h)/2-60:line_spacing=18`,
-    `drawtext=fontfile=${font}:textfile=${subtitlePath}:fontcolor=white:fontsize=${Math.max(22, Math.round(width * 0.026))}:x=(w-text_w)/2:y=(h-text_h)/2+100:line_spacing=12`
-  ].join(",");
+  const filters = [
+    `drawtext=fontfile=${fontPath}:textfile=${titlePath}:fontcolor=white:fontsize=${Math.max(34, Math.round(width * 0.055))}:x=(w-text_w)/2:y=(h-text_h)/2-60:line_spacing=18`,
+    `drawtext=fontfile=${fontPath}:textfile=${subtitlePath}:fontcolor=white:fontsize=${Math.max(22, Math.round(width * 0.026))}:x=(w-text_w)/2:y=(h-text_h)/2+100:line_spacing=12`
+  ];
+
+  let inputArgs: string[];
+  if (input.backgroundImageDataUrl) {
+    const image = decodeBackgroundImage(input.backgroundImageDataUrl);
+    imagePath = path.join(outputDir, `${id}-background.${image.extension}`);
+    await writeFile(imagePath, image.bytes);
+    inputArgs = ["-loop", "1", "-framerate", "30", "-i", imagePath];
+    filters.unshift(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
+  } else {
+    inputArgs = ["-f", "lavfi", "-i", `color=c=0x132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`];
+  }
 
   try {
     await runFfmpeg([
       "-hide_banner", "-loglevel", "error", "-y",
-      "-f", "lavfi", "-i", `color=c=0x132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`,
-      "-vf", filter,
+      ...inputArgs,
+      "-vf", filters.join(","),
       "-an",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
       "-pix_fmt", "yuv420p", "-movflags", "+faststart",
@@ -78,14 +101,20 @@ export async function renderTextVideo(
       filePath
     ], ffmpegPath);
   } catch (error) {
-    // Do not leave half-written output behind after a failed render.
-    const { rm } = await import("node:fs/promises");
-    await Promise.all([rm(filePath, { force: true }), rm(titlePath, { force: true }), rm(subtitlePath, { force: true })]);
+    await Promise.all([
+      rm(filePath, { force: true }),
+      rm(titlePath, { force: true }),
+      rm(subtitlePath, { force: true }),
+      ...(imagePath ? [rm(imagePath, { force: true })] : [])
+    ]);
     throw error;
   }
 
-  const { rm } = await import("node:fs/promises");
-  await Promise.all([rm(titlePath, { force: true }), rm(subtitlePath, { force: true })]);
+  await Promise.all([
+    rm(titlePath, { force: true }),
+    rm(subtitlePath, { force: true }),
+    ...(imagePath ? [rm(imagePath, { force: true })] : [])
+  ]);
   return { id, filePath, width, height, durationSeconds: input.durationSeconds };
 }
 
