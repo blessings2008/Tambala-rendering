@@ -91,7 +91,7 @@ export function createApp() {
     return res.type("video/mp4").download(filePath, `${req.params.id}.mp4`);
   });
 
-  app.use((error: unknown, _req, res, _next) => {
+  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof SyntaxError) return res.status(400).json({ error: "INVALID_JSON" });
     console.error("Unhandled request error:", error instanceof Error ? error.message : "unknown error");
     return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
