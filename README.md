@@ -8,6 +8,7 @@
 - FFmpeg-powered MP4 rendering.
 - Vertical (1080×1920), square (1080×1080), and landscape (1920×1080) output.
 - Text-based starter videos with a title and optional subtitle.
+- Optional base64 PNG, JPEG, or WebP background image (up to 5 MB), cropped to fill the selected format.
 - Health endpoint, request validation, Docker image, and CI checks.
 
 This is the first rendering foundation. Image sequences, uploaded media, music, transitions, templates, queued jobs, and AI-generated scenes are planned follow-on capabilities; they are not implemented yet.
@@ -42,7 +43,8 @@ Content-Type: application/json
   "title": "Your next big idea",
   "subtitle": "Made with Tambala",
   "durationSeconds": 8,
-  "format": "vertical"
+  "format": "vertical",
+  "backgroundImageDataUrl": "data:image/png;base64,..."
 }
 ```
 
@@ -72,7 +74,7 @@ The container installs FFmpeg and the DejaVu font used by the title renderer.
 - Rendering is synchronous and intended for short test jobs.
 - Render files are stored on the service's local filesystem. Ephemeral hosting filesystems can be cleared on restart/redeploy, so this is not yet durable production storage.
 - There is no authentication or public multi-tenant protection yet. Keep the service private until API keys, rate limits, job quotas, and storage lifecycle controls are implemented.
-- The first endpoint generates a designed background with text; it does not yet accept user uploads or generate footage from a prompt.
+- The first endpoint generates a designed background with text and can optionally accept a base64 PNG/JPEG/WebP background image. It does not yet accept multipart uploads, music, multiple scenes, or generate footage from a prompt.
 
 ## Next milestones
 
