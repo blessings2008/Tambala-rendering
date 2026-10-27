@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 export type VideoFormat = "vertical" | "square" | "landscape";
 export type VideoTemplate = "midnight" | "sunrise" | "paper" | "neon";
+export type SceneTransition = "cut" | "fade";
 
 export interface RenderRequest {
   title: string;
@@ -26,6 +27,7 @@ export interface SceneRenderRequest {
   scenes: RenderScene[];
   format: VideoFormat;
   template?: VideoTemplate;
+  transition?: SceneTransition;
 }
 
 export type AudioDataUrl = string;
@@ -156,20 +158,55 @@ export async function renderScenesVideo(
   const filePath = path.join(outputDir, `${id}.mp4`);
   const concatListPath = path.join(outputDir, `${id}-concat.txt`);
   const renderedSegments: RenderResult[] = [];
-  const durationSeconds = input.scenes.reduce((total, scene) => total + scene.durationSeconds, 0);
+  const transition = input.transition ?? "cut";
+  const transitionSeconds = transition === "fade" ? 0.5 : 0;
+  const summedDuration = input.scenes.reduce((total, scene) => total + scene.durationSeconds, 0);
+  const durationSeconds = summedDuration - transitionSeconds * (input.scenes.length - 1);
 
   try {
     for (const scene of input.scenes) {
-      renderedSegments.push(await renderTextVideo({ ...scene, format: input.format, template: input.template }, outputDir, ffmpegPath));
+      renderedSegments.push(await renderTextVideo({
+        ...scene,
+        format: input.format,
+        template: input.template
+      }, outputDir, ffmpegPath));
     }
-    const concatContents = renderedSegments.map((segment) => `file '${quoteConcatPath(segment.filePath)}'`).join("\n") + "\n";
-    await writeFile(concatListPath, concatContents, "utf8");
-    await runFfmpeg([
-      "-hide_banner", "-loglevel", "error", "-y",
-      "-f", "concat", "-safe", "0", "-i", concatListPath,
-      "-c", "copy", "-movflags", "+faststart",
-      filePath
-    ], ffmpegPath);
+
+    if (transition === "cut") {
+      const concatContents = renderedSegments.map((segment) => `file '${quoteConcatPath(segment.filePath)}'`).join("\n") + "\n";
+      await writeFile(concatListPath, concatContents, "utf8");
+      await runFfmpeg([
+        "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "concat", "-safe", "0", "-i", concatListPath,
+        "-c", "copy", "-movflags", "+faststart",
+        filePath
+      ], ffmpegPath);
+    } else {
+      const args = ["-hide_banner", "-loglevel", "error", "-y"];
+      for (const segment of renderedSegments) args.push("-i", segment.filePath);
+
+      const filters: string[] = [];
+      renderedSegments.forEach((_segment, index) => {
+        filters.push(`[${index}:v]settb=AVTB,setpts=PTS-STARTPTS[v${index}]`);
+      });
+      let previousLabel = "v0";
+      for (let index = 1; index < renderedSegments.length; index++) {
+        const outputLabel = `xfade${index}`;
+        const offset = input.scenes.slice(0, index).reduce((total, scene) => total + scene.durationSeconds, 0)
+          - transitionSeconds * index;
+        filters.push(`[${previousLabel}][v${index}]xfade=transition=fade:duration=${transitionSeconds}:offset=${offset}[${outputLabel}]`);
+        previousLabel = outputLabel;
+      }
+      args.push(
+        "-filter_complex", filters.join(";"),
+        "-map", `[${previousLabel}]`,
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-r", "30", "-t", String(durationSeconds),
+        "-movflags", "+faststart", filePath
+      );
+      await runFfmpeg(args, ffmpegPath);
+    }
+
     return { id, filePath, width, height, durationSeconds };
   } catch (error) {
     await rm(filePath, { force: true });
@@ -181,7 +218,6 @@ export async function renderScenesVideo(
     ]);
   }
 }
-
 
 function decodeAudio(dataUrl: AudioDataUrl): { bytes: Buffer; extension: string } {
   const match = /^data:audio\/(mpeg|mp3|wav|x-wav|mp4|aac|ogg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
