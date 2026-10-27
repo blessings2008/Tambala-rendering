@@ -136,7 +136,7 @@ describe("FFmpeg rendering", () => {
     expect(files.some((name) => name.includes("concat"))).toBe(false);
   }, 60_000);
 
-  it("creates an MP4 using a supplied base64 PNG background", async () => {
+  it("renders text animation and background motion over a supplied PNG", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-image-"));
     temporaryDirectories.push(outputDirectory);
     const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -145,7 +145,9 @@ describe("FFmpeg rendering", () => {
       title: "Image-backed video",
       durationSeconds: 3,
       format: "square",
-      backgroundImageDataUrl: png
+      backgroundImageDataUrl: png,
+      textAnimation: "fade-in",
+      backgroundMotion: "zoom-in"
     }, outputDirectory);
 
     const file = await readFile(result.filePath);
