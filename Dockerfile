@@ -15,6 +15,7 @@ RUN apt-get update \
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
+COPY public ./public
 RUN mkdir -p /app/renders && chown -R node:node /app
 USER node
 EXPOSE 3000
