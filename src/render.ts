@@ -81,27 +81,28 @@ export async function renderTextVideo(
   const filePath = path.join(outputDir, `${id}.mp4`);
   const fontPath = process.env.FONT_PATH ?? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
   let imagePath: string | undefined;
+  let completed = false;
   const decodedImage = input.backgroundImageDataUrl ? decodeBackgroundImage(input.backgroundImageDataUrl) : undefined;
 
-  await writeFile(titlePath, input.title, "utf8");
-  await writeFile(subtitlePath, input.subtitle ?? "", "utf8");
-
-  const filters = [
-    `drawtext=fontfile=${fontPath}:textfile=${titlePath}:fontcolor=white:fontsize=${Math.max(34, Math.round(width * 0.055))}:x=(w-text_w)/2:y=(h-text_h)/2-60:line_spacing=18`,
-    `drawtext=fontfile=${fontPath}:textfile=${subtitlePath}:fontcolor=white:fontsize=${Math.max(22, Math.round(width * 0.026))}:x=(w-text_w)/2:y=(h-text_h)/2+100:line_spacing=12`
-  ];
-
-  let inputArgs: string[];
-  if (decodedImage) {
-    imagePath = path.join(outputDir, `${id}-background.${decodedImage.extension}`);
-    await writeFile(imagePath, decodedImage.bytes);
-    inputArgs = ["-loop", "1", "-framerate", "30", "-i", imagePath];
-    filters.unshift(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
-  } else {
-    inputArgs = ["-f", "lavfi", "-i", `color=c=0x132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`];
-  }
-
   try {
+    await writeFile(titlePath, input.title, "utf8");
+    await writeFile(subtitlePath, input.subtitle ?? "", "utf8");
+
+    const filters = [
+      `drawtext=fontfile=${fontPath}:textfile=${titlePath}:fontcolor=white:fontsize=${Math.max(34, Math.round(width * 0.055))}:x=(w-text_w)/2:y=(h-text_h)/2-60:line_spacing=18`,
+      `drawtext=fontfile=${fontPath}:textfile=${subtitlePath}:fontcolor=white:fontsize=${Math.max(22, Math.round(width * 0.026))}:x=(w-text_w)/2:y=(h-text_h)/2+100:line_spacing=12`
+    ];
+
+    let inputArgs: string[];
+    if (decodedImage) {
+      imagePath = path.join(outputDir, `${id}-background.${decodedImage.extension}`);
+      await writeFile(imagePath, decodedImage.bytes);
+      inputArgs = ["-loop", "1", "-framerate", "30", "-i", imagePath];
+      filters.unshift(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
+    } else {
+      inputArgs = ["-f", "lavfi", "-i", `color=c=0x132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`];
+    }
+
     await runFfmpeg([
       "-hide_banner", "-loglevel", "error", "-y",
       ...inputArgs,
@@ -112,24 +113,18 @@ export async function renderTextVideo(
       "-t", String(input.durationSeconds),
       filePath
     ], ffmpegPath);
-  } catch (error) {
+
+    completed = true;
+    return { id, filePath, width, height, durationSeconds: input.durationSeconds };
+  } finally {
     await Promise.all([
-      rm(filePath, { force: true }),
+      ...(completed ? [] : [rm(filePath, { force: true })]),
       rm(titlePath, { force: true }),
       rm(subtitlePath, { force: true }),
       ...(imagePath ? [rm(imagePath, { force: true })] : [])
     ]);
-    throw error;
   }
-
-  await Promise.all([
-    rm(titlePath, { force: true }),
-    rm(subtitlePath, { force: true }),
-    ...(imagePath ? [rm(imagePath, { force: true })] : [])
-  ]);
-  return { id, filePath, width, height, durationSeconds: input.durationSeconds };
 }
-
 
 function quoteConcatPath(filePath: string): string {
   return path.resolve(filePath).replace(/'/g, "'\\''");
