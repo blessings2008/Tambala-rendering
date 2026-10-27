@@ -12,7 +12,7 @@ export function createApp() {
   const configuredMax = Number.parseInt(process.env.MAX_RENDER_SECONDS ?? "30", 10);
   const maxDuration = Number.isFinite(configuredMax) && configuredMax >= 3 ? configuredMax : 30;
   const imageSchema = z.string().max(7_000_000)
-    .regex(/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/);
+    .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/);
   const sceneSchema = z.object({
     title: z.string().trim().min(1).max(160),
     subtitle: z.string().trim().max(240).optional(),
