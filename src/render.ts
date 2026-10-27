@@ -69,7 +69,7 @@ export async function renderTextVideo(
   try {
     await runFfmpeg([
       "-hide_banner", "-loglevel", "error", "-y",
-      "-f", "lavfi", "-i", `color=c=#132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`,
+      "-f", "lavfi", "-i", `color=c=0x132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`,
       "-vf", filter,
       "-an",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
