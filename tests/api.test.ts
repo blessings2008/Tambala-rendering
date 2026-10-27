@@ -41,6 +41,23 @@ describe("HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({ error: "INVALID_RENDER_REQUEST" });
   });
 
+  it("rejects scene requests above the configured duration limit", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}/v1/renders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        format: "vertical",
+        scenes: [
+          { title: "Opening", durationSeconds: 16 },
+          { title: "Ending", durationSeconds: 15 }
+        ]
+      })
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "INVALID_RENDER_REQUEST" });
+  });
+
   it("rejects malformed render IDs", async () => {
     const baseUrl = await startServer();
     const response = await fetch(`${baseUrl}/v1/renders/not-a-uuid/video`);
