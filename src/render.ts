@@ -69,6 +69,7 @@ export async function renderTextVideo(
   const filePath = path.join(outputDir, `${id}.mp4`);
   const fontPath = process.env.FONT_PATH ?? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
   let imagePath: string | undefined;
+  const decodedImage = input.backgroundImageDataUrl ? decodeBackgroundImage(input.backgroundImageDataUrl) : undefined;
 
   await writeFile(titlePath, input.title, "utf8");
   await writeFile(subtitlePath, input.subtitle ?? "", "utf8");
@@ -79,10 +80,9 @@ export async function renderTextVideo(
   ];
 
   let inputArgs: string[];
-  if (input.backgroundImageDataUrl) {
-    const image = decodeBackgroundImage(input.backgroundImageDataUrl);
-    imagePath = path.join(outputDir, `${id}-background.${image.extension}`);
-    await writeFile(imagePath, image.bytes);
+  if (decodedImage) {
+    imagePath = path.join(outputDir, `${id}-background.${decodedImage.extension}`);
+    await writeFile(imagePath, decodedImage.bytes);
     inputArgs = ["-loop", "1", "-framerate", "30", "-i", imagePath];
     filters.unshift(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
   } else {
