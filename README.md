@@ -95,12 +95,11 @@ The container installs FFmpeg and the DejaVu font used by the title renderer.
 
 ## Next milestones
 
-1. Verify builds and create the first real MP4.
-2. Add safe asset uploads and scene-based composition.
-3. Add a job queue and progress/status endpoint.
-4. Add durable object storage and signed download links.
-5. Add an authenticated internal API for Tambala agents and products.
-6. Explore AI scene generation as a separate optional pipeline.
+1. Add a job queue and progress/status endpoint.
+2. Add audio tracks, transitions, and reusable scene templates.
+3. Add durable object storage and signed download links.
+4. Add an authenticated internal API for Tambala agents and products.
+5. Explore AI scene generation as a separate optional pipeline.
 
 ## Project
 
