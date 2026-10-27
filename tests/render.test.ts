@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { getDimensions, renderScenesVideo, renderTextVideo } from "../src/render";
+import { addAudioTrack, getDimensions, renderScenesVideo, renderTextVideo } from "../src/render";
 
 const temporaryDirectories: string[] = [];
 
@@ -11,6 +11,31 @@ afterEach(async () => {
     rm(directory, { recursive: true, force: true })
   ));
 });
+
+
+function makeShortWavDataUrl(): string {
+  const sampleRate = 8_000;
+  const sampleCount = sampleRate;
+  const dataSize = sampleCount * 2;
+  const wav = Buffer.alloc(44 + dataSize);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataSize, 4);
+  wav.write("WAVE", 8);
+  wav.write("fmt ", 12);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < sampleCount; i++) {
+    wav.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / sampleRate) * 8_000), 44 + i * 2);
+  }
+  return `data:audio/wav;base64,${wav.toString("base64")}`;
+}
 
 describe("video format dimensions", () => {
   it("uses vertical dimensions for short-form social video", () => {
@@ -43,6 +68,21 @@ describe("FFmpeg rendering", () => {
     expect(fileInfo.size).toBeGreaterThan(1_000);
     expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
   }, 30_000);
+  it("adds a looping audio track to a rendered MP4", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-audio-"));
+    temporaryDirectories.push(outputDirectory);
+    const result = await renderTextVideo({
+      title: "Audio test",
+      durationSeconds: 3,
+      format: "square"
+    }, outputDirectory);
+
+    await addAudioTrack(result, makeShortWavDataUrl());
+    const file = await readFile(result.filePath);
+    expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
+    expect((await stat(result.filePath)).size).toBeGreaterThan(1_000);
+  }, 60_000);
+
   it("combines multiple scenes into one MP4 and cleans up intermediate segments", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-scenes-"));
     temporaryDirectories.push(outputDirectory);
