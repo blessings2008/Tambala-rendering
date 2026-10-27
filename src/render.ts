@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm, rename } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -24,6 +24,9 @@ export interface SceneRenderRequest {
   scenes: RenderScene[];
   format: VideoFormat;
 }
+
+export type AudioDataUrl = string;
+
 
 export interface RenderResult {
   id: string;
@@ -164,6 +167,55 @@ export async function renderScenesVideo(
     await Promise.all([
       rm(concatListPath, { force: true }),
       ...renderedSegments.map((segment) => rm(segment.filePath, { force: true }))
+    ]);
+  }
+}
+
+
+function decodeAudio(dataUrl: AudioDataUrl): { bytes: Buffer; extension: string } {
+  const match = /^data:audio\\/(mpeg|mp3|wav|x-wav|mp4|aac|ogg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw new Error("Audio must be a base64 MP3, WAV, M4A, AAC, or OGG data URL.");
+  const bytes = Buffer.from(match[2], "base64");
+  if (bytes.length === 0 || bytes.length > 5 * 1024 * 1024) {
+    throw new Error("Audio must be between 1 byte and 5 MB.");
+  }
+  const extensions: Record<string, string> = {
+    mpeg: "mp3", mp3: "mp3", wav: "wav", "x-wav": "wav", mp4: "m4a", aac: "aac", ogg: "ogg"
+  };
+  return { bytes, extension: extensions[match[1]] };
+}
+
+export async function addAudioTrack(
+  result: RenderResult,
+  audioDataUrl: AudioDataUrl,
+  ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg"
+): Promise<RenderResult> {
+  const decodedAudio = decodeAudio(audioDataUrl);
+  const outputDirectory = path.dirname(result.filePath);
+  const audioPath = path.join(outputDirectory, `${result.id}-audio.${decodedAudio.extension}`);
+  const muxedPath = path.join(outputDirectory, `${result.id}-muxed.mp4`);
+  let completed = false;
+
+  try {
+    await writeFile(audioPath, decodedAudio.bytes);
+    await runFfmpeg([
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-i", result.filePath,
+      "-stream_loop", "-1", "-i", audioPath,
+      "-map", "0:v:0", "-map", "1:a:0",
+      "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+      "-t", String(result.durationSeconds),
+      "-shortest", "-movflags", "+faststart",
+      muxedPath
+    ], ffmpegPath);
+    await rename(muxedPath, result.filePath);
+    completed = true;
+    return result;
+  } finally {
+    await Promise.all([
+      rm(audioPath, { force: true }),
+      rm(muxedPath, { force: true }),
+      ...(!completed ? [] : [])
     ]);
   }
 }
