@@ -21,7 +21,8 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) =>
     new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   ));
-  process.env.RENDER_OUTPUT_DIR = originalRenderOutputDirectory;
+  if (originalRenderOutputDirectory === undefined) delete process.env.RENDER_OUTPUT_DIR;
+  else process.env.RENDER_OUTPUT_DIR = originalRenderOutputDirectory;
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
