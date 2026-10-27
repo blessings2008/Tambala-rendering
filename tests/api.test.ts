@@ -1,7 +1,12 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 
 const servers: Array<{ close: (callback?: (error?: Error) => void) => void }> = [];
+const temporaryDirectories: string[] = [];
+const originalRenderOutputDirectory = process.env.RENDER_OUTPUT_DIR;
 
 async function startServer() {
   const server = createApp().listen(0, "127.0.0.1");
@@ -16,6 +21,8 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) =>
     new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   ));
+  process.env.RENDER_OUTPUT_DIR = originalRenderOutputDirectory;
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
 describe("HTTP API", () => {
@@ -42,6 +49,9 @@ describe("HTTP API", () => {
   });
 
   it("renders a multi-scene request and exposes its MP4 download", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-api-render-"));
+    temporaryDirectories.push(outputDirectory);
+    process.env.RENDER_OUTPUT_DIR = outputDirectory;
     const baseUrl = await startServer();
     const response = await fetch(`${baseUrl}/v1/renders`, {
       method: "POST",
