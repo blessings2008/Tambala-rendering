@@ -1,9 +1,30 @@
 import express from "express";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { addAudioTrack, renderScenesVideo, renderTextVideo } from "./render";
+
+type RenderJob = {
+  id: string;
+  status: "queued" | "rendering" | "completed" | "failed";
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+  result?: {
+    id: string;
+    format: "vertical" | "square" | "landscape";
+    template: "midnight" | "sunrise" | "paper" | "neon";
+    transition: "cut" | "fade" | "not_applicable";
+    width: number;
+    height: number;
+    durationSeconds: number;
+    sceneCount: number;
+    audioIncluded: boolean;
+    videoUrl: string;
+    videoUrlExpiresAt: string;
+  };
+};
 
 export function createApp() {
   const app = express();
@@ -29,7 +50,7 @@ export function createApp() {
     }
   });
 
-  app.get("/health", (_req, res) => res.json({ status: "ok", service: "tambala-rendering", version: "0.1.0" }));
+  app.get("/health", (_req, res) => res.json({ status: "ok", service: "tambala-rendering", version: "0.2.0" }));
 
   const publicDir = path.resolve(process.cwd(), "public");
   app.use(express.static(publicDir));
@@ -60,30 +81,53 @@ export function createApp() {
     return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
   };
 
-  // FFmpeg renders are memory-intensive. On small instances, allow only one
-  // render job at a time rather than letting concurrent jobs OOM-kill the service.
+  const jobs = new Map<string, RenderJob>();
   let renderInProgress = false;
+  const updateJob = (job: RenderJob, patch: Partial<RenderJob>) => {
+    Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+  };
 
-  app.post("/v1/renders", requireApiKey, async (req, res) => {
-    const parsed = renderSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "INVALID_RENDER_REQUEST", details: parsed.error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })) });
-    if (renderInProgress) return res.status(429).json({ error: "RENDER_BUSY", message: "Another video is being rendered. Please try again shortly." });
+  const runRenderJob = async (job: RenderJob, input: z.infer<typeof renderSchema>) => {
+    updateJob(job, { status: "rendering" });
     renderInProgress = true;
     try {
-      const input = parsed.data;
       const result = input.scenes
         ? await renderScenesVideo({ scenes: input.scenes, format: input.format, template: input.template, transition: input.transition })
         : await renderTextVideo({ title: input.title!, subtitle: input.subtitle, durationSeconds: input.durationSeconds, format: input.format, template: input.template, backgroundImageDataUrl: input.backgroundImageDataUrl });
       if (input.audioDataUrl) await addAudioTrack(result, input.audioDataUrl);
       const expiresAt = Math.floor(Date.now() / 1000) + downloadTokenTtlSeconds;
       const videoUrl = `/v1/renders/${result.id}/video?token=${encodeURIComponent(signDownloadToken(result.id, expiresAt))}`;
-      return res.status(201).json({ id: result.id, status: "completed", format: input.format, template: input.template, transition: input.scenes ? input.transition : "not_applicable", width: result.width, height: result.height, durationSeconds: result.durationSeconds, sceneCount: input.scenes?.length ?? 1, audioIncluded: Boolean(input.audioDataUrl), videoUrl, videoUrlExpiresAt: new Date(expiresAt * 1000).toISOString() });
+      updateJob(job, {
+        status: "completed",
+        result: { id: result.id, format: input.format, template: input.template, transition: input.scenes ? input.transition : "not_applicable", width: result.width, height: result.height, durationSeconds: result.durationSeconds, sceneCount: input.scenes?.length ?? 1, audioIncluded: Boolean(input.audioDataUrl), videoUrl, videoUrlExpiresAt: new Date(expiresAt * 1000).toISOString() }
+      });
     } catch (error) {
-      console.error("Render failed:", error instanceof Error ? error.message : "unknown error");
-      return res.status(500).json({ error: "RENDER_FAILED", message: "The video could not be rendered." });
+      console.error("Render failed:", error instanceof Error ? error.stack ?? error.message : "unknown error");
+      updateJob(job, { status: "failed", error: "The video could not be rendered." });
     } finally {
       renderInProgress = false;
     }
+  };
+
+  app.post("/v1/renders", requireApiKey, async (req, res) => {
+    const parsed = renderSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "INVALID_RENDER_REQUEST", details: parsed.error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })) });
+    if (renderInProgress) return res.status(429).json({ error: "RENDER_BUSY", message: "Another video is being rendered. Please try again shortly." });
+
+    const now = new Date().toISOString();
+    const job: RenderJob = { id: randomUUID(), status: "queued", createdAt: now, updatedAt: now };
+    jobs.set(job.id, job);
+
+    // Start asynchronously so the HTTP request isn't held open for the whole FFmpeg render.
+    void runRenderJob(job, parsed.data);
+    return res.status(202).json({ id: job.id, status: job.status, statusUrl: `/v1/renders/${job.id}`, createdAt: job.createdAt });
+  });
+
+  app.get("/v1/renders/:id", requireApiKey, (req, res) => {
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: "INVALID_RENDER_ID" });
+    const job = jobs.get(req.params.id);
+    if (!job) return res.status(404).json({ error: "RENDER_JOB_NOT_FOUND" });
+    return res.json(job);
   });
 
   app.get("/v1/renders/:id/video", (req, res) => {
@@ -98,6 +142,15 @@ export function createApp() {
     if (!existsSync(filePath)) return res.status(404).json({ error: "RENDER_NOT_FOUND" });
     return res.type("video/mp4").download(filePath, `${req.params.id}.mp4`);
   });
+
+  // Keep completed jobs bounded in memory; video files remain on disk until their normal cleanup lifecycle.
+  const cleanupInterval = setInterval(() => {
+    const cutoff = Date.now() - 6 * 60 * 60 * 1000;
+    for (const [id, job] of jobs) {
+      if (Date.parse(job.updatedAt) < cutoff) jobs.delete(id);
+    }
+  }, 15 * 60 * 1000);
+  cleanupInterval.unref();
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof SyntaxError) return res.status(400).json({ error: "INVALID_JSON" });
