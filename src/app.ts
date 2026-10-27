@@ -16,7 +16,7 @@ export function createApp() {
     subtitle: z.string().trim().max(240).optional(),
     durationSeconds: z.number().int().min(3).max(maxDuration).default(8),
     format: z.enum(["vertical", "square", "landscape"]).default("vertical"),
-    backgroundImageDataUrl: z.string().max(7_000_000).regex(/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/).optional()
+    backgroundImageDataUrl: z.string().max(7_000_000).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/).optional()
   });
 
   app.get("/health", (_req, res) => {
