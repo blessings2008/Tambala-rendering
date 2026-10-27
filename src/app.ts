@@ -26,6 +26,7 @@ export function createApp() {
     subtitle: z.string().trim().max(240).optional(),
     durationSeconds: z.number().int().min(3).max(maxDuration).default(8),
     format: z.enum(["vertical", "square", "landscape"]).default("vertical"),
+    template: z.enum(["midnight", "sunrise", "paper", "neon"]).default("midnight"),
     backgroundImageDataUrl: imageSchema.optional(),
     audioDataUrl: audioSchema.optional(),
     scenes: z.array(sceneSchema).min(2).max(8).optional()
@@ -81,12 +82,13 @@ export function createApp() {
     try {
       const input = parsed.data;
       const result = input.scenes
-        ? await renderScenesVideo({ scenes: input.scenes, format: input.format })
+        ? await renderScenesVideo({ scenes: input.scenes, format: input.format, template: input.template })
         : await renderTextVideo({
             title: input.title!,
             subtitle: input.subtitle,
             durationSeconds: input.durationSeconds,
             format: input.format,
+            template: input.template,
             backgroundImageDataUrl: input.backgroundImageDataUrl
           });
       if (input.audioDataUrl) await addAudioTrack(result, input.audioDataUrl);
@@ -94,6 +96,7 @@ export function createApp() {
         id: result.id,
         status: "completed",
         format: input.format,
+        template: input.template,
         width: result.width,
         height: result.height,
         durationSeconds: result.durationSeconds,
