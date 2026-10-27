@@ -1,4 +1,5 @@
 import express from "express";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -71,10 +72,12 @@ export function createApp() {
     });
   });
 
-  // Protect render creation and downloads when deployed publicly.
-  // Configure RENDER_API_KEY in production; health checks remain public.
+  // Render creation stays protected by the API key. Completed video downloads use
+  // short-lived signed URLs so a browser can open them without exposing the API key.
   const apiKey = process.env.RENDER_API_KEY;
-  app.use(["/v1/renders"], (req, res, next) => {
+  const downloadTokenTtlSeconds = 60 * 60;
+
+  const requireApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (process.env.NODE_ENV === "production" && !apiKey) {
       return res.status(503).json({ error: "RENDER_API_KEY_NOT_CONFIGURED" });
     }
@@ -84,9 +87,31 @@ export function createApp() {
       return res.status(401).json({ error: "UNAUTHORIZED" });
     }
     return next();
-  });
+  };
 
-  app.post("/v1/renders", async (req, res) => {
+  const signDownloadToken = (renderId: string, expiresAt: number) => {
+    if (!apiKey) return "";
+    const payload = `${renderId}.${expiresAt}`;
+    const signature = createHmac("sha256", apiKey).update(payload).digest("base64url");
+    return `${expiresAt}.${signature}`;
+  };
+
+  const verifyDownloadToken = (renderId: string, token: string) => {
+    if (!apiKey) return false;
+    const separator = token.indexOf(".");
+    if (separator <= 0) return false;
+    const expiresAt = Number(token.slice(0, separator));
+    const signature = token.slice(separator + 1);
+    if (!Number.isSafeInteger(expiresAt) || expiresAt < Math.floor(Date.now() / 1000) || !signature) return false;
+    const expected = createHmac("sha256", apiKey)
+      .update(`${renderId}.${expiresAt}`)
+      .digest("base64url");
+    const actualBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+  };
+
+  app.post("/v1/renders", requireApiKey, async (req, res) => {
     const parsed = renderSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -108,6 +133,11 @@ export function createApp() {
             backgroundImageDataUrl: input.backgroundImageDataUrl
           });
       if (input.audioDataUrl) await addAudioTrack(result, input.audioDataUrl);
+
+      const expiresAt = Math.floor(Date.now() / 1000) + downloadTokenTtlSeconds;
+      const downloadToken = signDownloadToken(result.id, expiresAt);
+      const videoUrl = `/v1/renders/${result.id}/video?token=${encodeURIComponent(downloadToken)}`;
+
       return res.status(201).json({
         id: result.id,
         status: "completed",
@@ -119,7 +149,8 @@ export function createApp() {
         durationSeconds: result.durationSeconds,
         sceneCount: input.scenes?.length ?? 1,
         audioIncluded: Boolean(input.audioDataUrl),
-        videoUrl: `/v1/renders/${result.id}/video`
+        videoUrl,
+        videoUrlExpiresAt: new Date(expiresAt * 1000).toISOString()
       });
     } catch (error) {
       console.error("Render failed:", error instanceof Error ? error.message : "unknown error");
@@ -131,6 +162,18 @@ export function createApp() {
     if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) {
       return res.status(400).json({ error: "INVALID_RENDER_ID" });
     }
+
+    const authorization = req.header("authorization") ?? "";
+    const authorizedByApiKey = Boolean(apiKey) && authorization === `Bearer ${apiKey}`;
+    const authorizedByDownloadToken = verifyDownloadToken(req.params.id, req.query.token?.toString() ?? "");
+
+    if (process.env.NODE_ENV === "production" && !apiKey) {
+      return res.status(503).json({ error: "RENDER_API_KEY_NOT_CONFIGURED" });
+    }
+    if (apiKey && !authorizedByApiKey && !authorizedByDownloadToken) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+
     const outputDirectory = path.resolve(process.env.RENDER_OUTPUT_DIR ?? "./renders");
     const filePath = path.join(outputDirectory, `${req.params.id}.mp4`);
     if (!existsSync(filePath)) return res.status(404).json({ error: "RENDER_NOT_FOUND" });
