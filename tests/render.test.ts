@@ -68,6 +68,22 @@ describe("FFmpeg rendering", () => {
     expect(fileInfo.size).toBeGreaterThan(1_000);
     expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
   }, 30_000);
+  it("renders a fade transition between scenes", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-fade-"));
+    temporaryDirectories.push(outputDirectory);
+    const result = await renderScenesVideo({
+      format: "square",
+      transition: "fade",
+      scenes: [
+        { title: "First scene", durationSeconds: 3 },
+        { title: "Second scene", durationSeconds: 3 }
+      ]
+    }, outputDirectory);
+    const file = await readFile(result.filePath);
+    expect(result.durationSeconds).toBe(5.5);
+    expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
+  }, 90_000);
+
   it("supports the paper and neon visual templates", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-templates-"));
     temporaryDirectories.push(outputDirectory);
