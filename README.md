@@ -7,11 +7,12 @@
 - Node.js + TypeScript HTTP API.
 - FFmpeg-powered MP4 rendering.
 - Vertical (1080×1920), square (1080×1080), and landscape (1920×1080) output.
-- Text-based starter videos with a title and optional subtitle.
+- Text-based video scenes with a title and optional subtitle.
+- Scene-based composition: combine 2–8 scenes into one MP4, each with its own duration and optional background image.
 - Optional base64 PNG, JPEG, or WebP background image (up to 5 MB), cropped to fill the selected format.
 - Health endpoint, request validation, Docker image, and CI checks.
 
-This is the first rendering foundation. Image sequences, uploaded media, music, transitions, templates, queued jobs, and AI-generated scenes are planned follow-on capabilities; they are not implemented yet.
+The rendering foundation now supports assembling a short multi-scene video. AI-generated footage, music, transitions, uploaded media, templates, queued jobs, and prompt-to-video generation remain future capabilities.
 
 ## Run locally
 
@@ -33,7 +34,7 @@ Set `FFMPEG_PATH` if the FFmpeg executable is not on your PATH. The default outp
 GET /health
 ```
 
-### Render a video
+### Render one scene
 
 ```http
 POST /v1/renders
@@ -50,7 +51,23 @@ Content-Type: application/json
 
 Supported formats: `vertical`, `square`, `landscape`. Duration must be 3 seconds or more and is capped by `MAX_RENDER_SECONDS` (30 seconds by default).
 
-A successful response includes a render ID and a relative `videoUrl`. Download it with `GET /v1/renders/{id}/video`.
+### Render a multi-scene video
+
+Send 2–8 scenes. Each scene has its own title, optional subtitle, duration, and optional base64 image. The combined duration must stay within `MAX_RENDER_SECONDS` (30 seconds by default).
+
+```json
+{
+  "format": "vertical",
+  "scenes": [
+    { "title": "The problem", "subtitle": "Every idea starts somewhere", "durationSeconds": 4 },
+    { "title": "A better way", "subtitle": "Built with Tambala", "durationSeconds": 5, "backgroundImageDataUrl": "data:image/png;base64,..." }
+  ]
+}
+```
+
+Supported formats: `vertical`, `square`, `landscape`. Scene durations must be at least 3 seconds. The combined duration cannot exceed the configured maximum.
+
+A successful response includes a render ID, total duration, scene count, and relative `videoUrl`. Download it with `GET /v1/renders/{id}/video`.
 
 Example with curl:
 
@@ -74,7 +91,7 @@ The container installs FFmpeg and the DejaVu font used by the title renderer.
 - Rendering is synchronous and intended for short test jobs.
 - Render files are stored on the service's local filesystem. Ephemeral hosting filesystems can be cleared on restart/redeploy, so this is not yet durable production storage.
 - There is no authentication or public multi-tenant protection yet. Keep the service private until API keys, rate limits, job quotas, and storage lifecycle controls are implemented.
-- The first endpoint generates a designed background with text and can optionally accept a base64 PNG/JPEG/WebP background image. It does not yet accept multipart uploads, music, multiple scenes, or generate footage from a prompt.
+- This creates designed text scenes and can optionally use supplied background images. It does not yet generate moving footage from a text prompt.
 
 ## Next milestones
 
