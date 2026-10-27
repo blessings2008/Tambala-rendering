@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 export type VideoFormat = "vertical" | "square" | "landscape";
+export type VideoTemplate = "midnight" | "sunrise" | "paper" | "neon";
 
 export interface RenderRequest {
   title: string;
@@ -11,6 +12,7 @@ export interface RenderRequest {
   durationSeconds: number;
   format: VideoFormat;
   backgroundImageDataUrl?: string;
+  template?: VideoTemplate;
 }
 
 export interface RenderScene {
@@ -23,6 +25,7 @@ export interface RenderScene {
 export interface SceneRenderRequest {
   scenes: RenderScene[];
   format: VideoFormat;
+  template?: VideoTemplate;
 }
 
 export type AudioDataUrl = string;
@@ -35,6 +38,13 @@ export interface RenderResult {
   height: number;
   durationSeconds: number;
 }
+
+const THEMES: Record<VideoTemplate, { backgroundColor: string; titleColor: string; subtitleColor: string }> = {
+  midnight: { backgroundColor: "0x132238", titleColor: "white", subtitleColor: "white" },
+  sunrise: { backgroundColor: "0x9D3C2B", titleColor: "white", subtitleColor: "0xFFF0D5" },
+  paper: { backgroundColor: "0xF2EEE5", titleColor: "0x17212B", subtitleColor: "0x49545F" },
+  neon: { backgroundColor: "0x101024", titleColor: "0xC4FF4D", subtitleColor: "white" }
+};
 
 const DIMENSIONS: Record<VideoFormat, { width: number; height: number }> = {
   vertical: { width: 1080, height: 1920 },
@@ -76,6 +86,7 @@ export async function renderTextVideo(
 ): Promise<RenderResult> {
   const id = randomUUID();
   const { width, height } = DIMENSIONS[input.format];
+  const theme = THEMES[input.template ?? "midnight"];
   const outputDir = path.resolve(outputDirectory);
   await mkdir(outputDir, { recursive: true });
 
@@ -92,8 +103,8 @@ export async function renderTextVideo(
     await writeFile(subtitlePath, input.subtitle ?? "", "utf8");
 
     const filters = [
-      `drawtext=fontfile=${fontPath}:textfile=${titlePath}:fontcolor=white:fontsize=${Math.max(34, Math.round(width * 0.055))}:x=(w-text_w)/2:y=(h-text_h)/2-60:line_spacing=18`,
-      `drawtext=fontfile=${fontPath}:textfile=${subtitlePath}:fontcolor=white:fontsize=${Math.max(22, Math.round(width * 0.026))}:x=(w-text_w)/2:y=(h-text_h)/2+100:line_spacing=12`
+      `drawtext=fontfile=${fontPath}:textfile=${titlePath}:fontcolor=${theme.titleColor}:fontsize=${Math.max(34, Math.round(width * 0.055))}:x=(w-text_w)/2:y=(h-text_h)/2-60:line_spacing=18`,
+      `drawtext=fontfile=${fontPath}:textfile=${subtitlePath}:fontcolor=${theme.subtitleColor}:fontsize=${Math.max(22, Math.round(width * 0.026))}:x=(w-text_w)/2:y=(h-text_h)/2+100:line_spacing=12`
     ];
 
     let inputArgs: string[];
@@ -103,7 +114,7 @@ export async function renderTextVideo(
       inputArgs = ["-loop", "1", "-framerate", "30", "-i", imagePath];
       filters.unshift(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
     } else {
-      inputArgs = ["-f", "lavfi", "-i", `color=c=0x132238:s=${width}x${height}:r=30:d=${input.durationSeconds}`];
+      inputArgs = ["-f", "lavfi", "-i", `color=c=${theme.backgroundColor}:s=${width}x${height}:r=30:d=${input.durationSeconds}`];
     }
 
     await runFfmpeg([
@@ -149,7 +160,7 @@ export async function renderScenesVideo(
 
   try {
     for (const scene of input.scenes) {
-      renderedSegments.push(await renderTextVideo({ ...scene, format: input.format }, outputDir, ffmpegPath));
+      renderedSegments.push(await renderTextVideo({ ...scene, format: input.format, template: input.template }, outputDir, ffmpegPath));
     }
     const concatContents = renderedSegments.map((segment) => `file '${quoteConcatPath(segment.filePath)}'`).join("\n") + "\n";
     await writeFile(concatListPath, concatContents, "utf8");
