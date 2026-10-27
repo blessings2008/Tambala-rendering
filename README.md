@@ -8,6 +8,7 @@
 - FFmpeg-powered MP4 rendering.
 - Vertical (1080×1920), square (1080×1080), and landscape (1920×1080) output.
 - Text-based video scenes with a title and optional subtitle.
+- Four built-in visual templates: `midnight`, `sunrise`, `paper`, and `neon`.
 - Scene-based composition: combine 2–8 scenes into one MP4, each with its own duration and optional background image.
 - Optional base64 PNG, JPEG, or WebP background image (up to 5 MB), cropped to fill the selected format.
 - Optional looping background audio from base64 MP3, WAV, M4A, AAC, or OGG input; audio is encoded to AAC in the final MP4.
@@ -46,12 +47,13 @@ Content-Type: application/json
   "subtitle": "Made with Tambala",
   "durationSeconds": 8,
   "format": "vertical",
+  "template": "midnight",
   "backgroundImageDataUrl": "data:image/png;base64,...",
   "audioDataUrl": "data:audio/mpeg;base64,..."
 }
 ```
 
-Supported formats: `vertical`, `square`, `landscape`. Duration must be 3 seconds or more and is capped by `MAX_RENDER_SECONDS` (30 seconds by default).
+Supported formats: `vertical`, `square`, `landscape`. Templates: `midnight` (navy), `sunrise` (warm red), `paper` (light neutral), and `neon` (dark with bright accent). Duration must be 3 seconds or more and is capped by `MAX_RENDER_SECONDS` (30 seconds by default).
 
 ### Render a multi-scene video
 
@@ -67,7 +69,7 @@ Send 2–8 scenes. Each scene has its own title, optional subtitle, duration, an
 }
 ```
 
-Supported formats: `vertical`, `square`, `landscape`. Scene durations must be at least 3 seconds. The combined duration cannot exceed the configured maximum. You can add `audioDataUrl` at the top level to loop a supported audio track under the full video. Audio and image assets share a combined request limit of approximately 5 MB.
+Supported formats: `vertical`, `square`, `landscape`. Scene durations must be at least 3 seconds. The combined duration cannot exceed the configured maximum. Set `template` at the top level to style all scenes. You can add `audioDataUrl` at the top level to loop a supported audio track under the full video. Audio and image assets share a combined request limit of approximately 5 MB.
 
 A successful response includes a render ID, total duration, scene count, whether audio was included, and relative `videoUrl`. Download it with `GET /v1/renders/{id}/video`.
 
@@ -98,7 +100,7 @@ The container installs FFmpeg and the DejaVu font used by the title renderer.
 ## Next milestones
 
 1. Add a job queue and progress/status endpoint.
-2. Add transitions and reusable scene templates.
+2. Add transitions and richer, reusable scene layouts.
 3. Add durable object storage and signed download links.
 4. Add an authenticated internal API for Tambala agents and products.
 5. Explore AI scene generation as a separate optional pipeline.
