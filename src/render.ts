@@ -13,6 +13,18 @@ export interface RenderRequest {
   backgroundImageDataUrl?: string;
 }
 
+export interface RenderScene {
+  title: string;
+  subtitle?: string;
+  durationSeconds: number;
+  backgroundImageDataUrl?: string;
+}
+
+export interface SceneRenderRequest {
+  scenes: RenderScene[];
+  format: VideoFormat;
+}
+
 export interface RenderResult {
   id: string;
   filePath: string;
@@ -116,6 +128,49 @@ export async function renderTextVideo(
     ...(imagePath ? [rm(imagePath, { force: true })] : [])
   ]);
   return { id, filePath, width, height, durationSeconds: input.durationSeconds };
+}
+
+
+function quoteConcatPath(filePath: string): string {
+  return path.resolve(filePath).replace(/'/g, "'\\''");
+}
+
+export async function renderScenesVideo(
+  input: SceneRenderRequest,
+  outputDirectory = process.env.RENDER_OUTPUT_DIR ?? "./renders",
+  ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg"
+): Promise<RenderResult> {
+  const outputDir = path.resolve(outputDirectory);
+  await mkdir(outputDir, { recursive: true });
+  const id = randomUUID();
+  const { width, height } = DIMENSIONS[input.format];
+  const filePath = path.join(outputDir, `${id}.mp4`);
+  const concatListPath = path.join(outputDir, `${id}-concat.txt`);
+  const renderedSegments: RenderResult[] = [];
+  const durationSeconds = input.scenes.reduce((total, scene) => total + scene.durationSeconds, 0);
+
+  try {
+    for (const scene of input.scenes) {
+      renderedSegments.push(await renderTextVideo({ ...scene, format: input.format }, outputDir, ffmpegPath));
+    }
+    const concatContents = renderedSegments.map((segment) => `file '${quoteConcatPath(segment.filePath)}'`).join("\\n") + "\\n";
+    await writeFile(concatListPath, concatContents, "utf8");
+    await runFfmpeg([
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-f", "concat", "-safe", "0", "-i", concatListPath,
+      "-c", "copy", "-movflags", "+faststart",
+      filePath
+    ], ffmpegPath);
+    return { id, filePath, width, height, durationSeconds };
+  } catch (error) {
+    await rm(filePath, { force: true });
+    throw error;
+  } finally {
+    await Promise.all([
+      rm(concatListPath, { force: true }),
+      ...renderedSegments.map((segment) => rm(segment.filePath, { force: true }))
+    ]);
+  }
 }
 
 export function getDimensions(format: VideoFormat): { width: number; height: number } {
