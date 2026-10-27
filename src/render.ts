@@ -194,8 +194,6 @@ export async function addAudioTrack(
   const outputDirectory = path.dirname(result.filePath);
   const audioPath = path.join(outputDirectory, `${result.id}-audio.${decodedAudio.extension}`);
   const muxedPath = path.join(outputDirectory, `${result.id}-muxed.mp4`);
-  let completed = false;
-
   try {
     await writeFile(audioPath, decodedAudio.bytes);
     await runFfmpeg([
@@ -209,13 +207,11 @@ export async function addAudioTrack(
       muxedPath
     ], ffmpegPath);
     await rename(muxedPath, result.filePath);
-    completed = true;
     return result;
   } finally {
     await Promise.all([
       rm(audioPath, { force: true }),
-      rm(muxedPath, { force: true }),
-      ...(!completed ? [] : [])
+      rm(muxedPath, { force: true })
     ]);
   }
 }
