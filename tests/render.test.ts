@@ -43,4 +43,22 @@ describe("FFmpeg rendering", () => {
     expect(fileInfo.size).toBeGreaterThan(1_000);
     expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
   }, 30_000);
+  it("creates an MP4 using a supplied base64 PNG background", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-image-"));
+    temporaryDirectories.push(outputDirectory);
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    const result = await renderTextVideo({
+      title: "Image-backed video",
+      durationSeconds: 3,
+      format: "square",
+      backgroundImageDataUrl: png
+    }, outputDirectory);
+
+    const file = await readFile(result.filePath);
+    expect(result.width).toBe(1080);
+    expect(result.height).toBe(1080);
+    expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
+  }, 30_000);
+
 });
