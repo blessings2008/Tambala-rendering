@@ -182,29 +182,47 @@ export async function renderScenesVideo(
         filePath
       ], ffmpegPath);
     } else {
-      const args = ["-hide_banner", "-loglevel", "error", "-y"];
-      for (const segment of renderedSegments) args.push("-i", segment.filePath);
+      // Composite fades pair-by-pair instead of keeping every scene decoded in
+      // one large filter graph. This substantially lowers peak memory on small
+      // instances while preserving the same transition timing.
+      let accumulatedPath = renderedSegments[0].filePath;
+      let accumulatedDuration = input.scenes[0].durationSeconds;
+      const temporaryFadeFiles: string[] = [];
 
-      const filters: string[] = [];
-      renderedSegments.forEach((_segment, index) => {
-        filters.push(`[${index}:v]settb=AVTB,setpts=PTS-STARTPTS[v${index}]`);
-      });
-      let previousLabel = "v0";
-      for (let index = 1; index < renderedSegments.length; index++) {
-        const outputLabel = `xfade${index}`;
-        const offset = input.scenes.slice(0, index).reduce((total, scene) => total + scene.durationSeconds, 0)
-          - transitionSeconds * index;
-        filters.push(`[${previousLabel}][v${index}]xfade=transition=fade:duration=${transitionSeconds}:offset=${offset}[${outputLabel}]`);
-        previousLabel = outputLabel;
+      try {
+        for (let index = 1; index < renderedSegments.length; index++) {
+          const nextSegment = renderedSegments[index];
+          const isLast = index === renderedSegments.length - 1;
+          const nextPath = isLast
+            ? filePath
+            : path.join(outputDir, `${id}-fade-${index}.mp4`);
+          if (!isLast) temporaryFadeFiles.push(nextPath);
+
+          const outputDuration = accumulatedDuration + input.scenes[index].durationSeconds - transitionSeconds;
+          const offset = accumulatedDuration - transitionSeconds;
+          await runFfmpeg([
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-filter_complex_threads", "1",
+            "-i", accumulatedPath,
+            "-i", nextSegment.filePath,
+            "-filter_complex",
+            `[0:v]settb=AVTB,setpts=PTS-STARTPTS[v0];[1:v]settb=AVTB,setpts=PTS-STARTPTS[v1];[v0][v1]xfade=transition=fade:duration=${transitionSeconds}:offset=${offset}[outv]`,
+            "-map", "[outv]",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-r", "30", "-threads", "1",
+            "-t", String(outputDuration),
+            "-movflags", "+faststart", nextPath
+          ], ffmpegPath);
+
+          if (accumulatedPath !== renderedSegments[0].filePath) {
+            await rm(accumulatedPath, { force: true });
+          }
+          accumulatedPath = nextPath;
+          accumulatedDuration = outputDuration;
+        }
+      } finally {
+        await Promise.all(temporaryFadeFiles.map((temporaryPath) => rm(temporaryPath, { force: true })));
       }
-      args.push(
-        "-filter_complex", filters.join(";"),
-        "-map", `[${previousLabel}]`,
-        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-        "-pix_fmt", "yuv420p", "-r", "30", "-t", String(durationSeconds),
-        "-movflags", "+faststart", filePath
-      );
-      await runFfmpeg(args, ffmpegPath);
     }
 
     return { id, filePath, width, height, durationSeconds };
