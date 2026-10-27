@@ -41,6 +41,34 @@ describe("HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({ error: "INVALID_RENDER_REQUEST" });
   });
 
+  it("renders a multi-scene request and exposes its MP4 download", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}/v1/renders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        format: "square",
+        scenes: [
+          { title: "API opening", durationSeconds: 3 },
+          { title: "API ending", subtitle: "Done", durationSeconds: 3 }
+        ]
+      })
+    });
+    expect(response.status).toBe(201);
+    const payload = await response.json() as {
+      id: string;
+      status: string;
+      sceneCount: number;
+      durationSeconds: number;
+      videoUrl: string;
+    };
+    expect(payload).toMatchObject({ status: "completed", sceneCount: 2, durationSeconds: 6 });
+    const videoResponse = await fetch(new URL(payload.videoUrl, baseUrl));
+    expect(videoResponse.status).toBe(200);
+    const video = Buffer.from(await videoResponse.arrayBuffer());
+    expect(video.subarray(4, 8).toString("ascii")).toBe("ftyp");
+  }, 90_000);
+
   it("rejects scene requests above the configured duration limit", async () => {
     const baseUrl = await startServer();
     const response = await fetch(`${baseUrl}/v1/renders`, {
