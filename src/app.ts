@@ -2,7 +2,7 @@ import express from "express";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { renderScenesVideo, renderTextVideo } from "./render";
+import { addAudioTrack, renderScenesVideo, renderTextVideo } from "./render";
 
 export function createApp() {
   const app = express();
@@ -25,6 +25,7 @@ export function createApp() {
     durationSeconds: z.number().int().min(3).max(maxDuration).default(8),
     format: z.enum(["vertical", "square", "landscape"]).default("vertical"),
     backgroundImageDataUrl: imageSchema.optional(),
+    audioDataUrl: audioSchema.optional(),
     scenes: z.array(sceneSchema).min(2).max(8).optional()
   }).superRefine((value, context) => {
     if (value.scenes && (value.title !== undefined || value.subtitle !== undefined || value.backgroundImageDataUrl !== undefined)) {
@@ -37,9 +38,15 @@ export function createApp() {
       if (totalDuration > maxDuration) {
         context.addIssue({ code: "custom", path: ["scenes"], message: `Combined scene duration must not exceed ${maxDuration} seconds.` });
       }
-      const totalImageCharacters = value.scenes.reduce((total, scene) => total + (scene.backgroundImageDataUrl?.length ?? 0), 0);
-      if (totalImageCharacters > 6_500_000) {
-        context.addIssue({ code: "custom", path: ["scenes"], message: "Combined background image data is too large; keep the total under 5 MB." });
+      const totalAssetCharacters = value.scenes.reduce((total, scene) => total + (scene.backgroundImageDataUrl?.length ?? 0), 0)
+        + (value.audioDataUrl?.length ?? 0);
+      if (totalAssetCharacters > 6_500_000) {
+        context.addIssue({ code: "custom", path: ["scenes"], message: "Combined image and audio data is too large; keep total assets under 5 MB." });
+      }
+    } else {
+      const totalAssetCharacters = (value.backgroundImageDataUrl?.length ?? 0) + (value.audioDataUrl?.length ?? 0);
+      if (totalAssetCharacters > 6_500_000) {
+        context.addIssue({ code: "custom", path: ["audioDataUrl"], message: "Combined image and audio data is too large; keep total assets under 5 MB." });
       }
     }
   });
@@ -80,6 +87,7 @@ export function createApp() {
             format: input.format,
             backgroundImageDataUrl: input.backgroundImageDataUrl
           });
+      if (input.audioDataUrl) await addAudioTrack(result, input.audioDataUrl);
       return res.status(201).json({
         id: result.id,
         status: "completed",
@@ -88,6 +96,7 @@ export function createApp() {
         height: result.height,
         durationSeconds: result.durationSeconds,
         sceneCount: input.scenes?.length ?? 1,
+        audioIncluded: Boolean(input.audioDataUrl),
         videoUrl: `/v1/renders/${result.id}/video`
       });
     } catch (error) {
