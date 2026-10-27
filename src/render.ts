@@ -102,10 +102,14 @@ function textAnimationFilters(animation: TextAnimation, titlePath: string, subti
 
 function motionFilter(motion: BackgroundMotion, width: number, height: number, duration: number): string {
   if (motion === "none") return `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
-  const zoom = motion === "zoom-out" ? "1.12-0.12*min(t/3,1)" : "1+0.12*min(t/3,1)";
-  const x = motion === "pan-left" ? "iw*0.06*min(t/3,1)" : motion === "pan-right" ? "iw*0.06*(1-min(t/3,1))" : "(iw-iw/zoom)/2";
+  // zoompan expressions use the output-frame counter (on), not seconds.
+  // Dividing by the scene's total frame count makes the motion gradual
+  // throughout the clip instead of completing in the first few frames.
+  const progress = `min(on/${Math.max(1, Math.round(duration * 30))},1)`;
+  const zoom = motion === "zoom-out" ? `1.12-0.12*${progress}` : `1+0.12*${progress}`;
+  const x = motion === "pan-left" ? `iw*0.06*${progress}` : motion === "pan-right" ? `iw*0.06*(1-${progress})` : "(iw-iw/zoom)/2";
   const y = "(ih-ih/zoom)/2";
-  return `scale=${width * 1.14}:${height * 1.14}:force_original_aspect_ratio=increase,crop=${width}:${height},zoompan=z='${zoom}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=30,trim=duration=${escapedFilterNumber(duration)},setpts=PTS-STARTPTS`;
+  return `scale=${Math.round(width * 1.14)}:${Math.round(height * 1.14)}:force_original_aspect_ratio=increase,crop=${width}:${height},zoompan=z='${zoom}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=30,trim=duration=${escapedFilterNumber(duration)},setpts=PTS-STARTPTS`;
 }
 
 export async function renderTextVideo(input: RenderRequest, outputDirectory = process.env.RENDER_OUTPUT_DIR ?? "./renders", ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg"): Promise<RenderResult> {
