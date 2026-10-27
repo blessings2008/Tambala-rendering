@@ -153,7 +153,7 @@ export async function renderScenesVideo(
     for (const scene of input.scenes) {
       renderedSegments.push(await renderTextVideo({ ...scene, format: input.format }, outputDir, ffmpegPath));
     }
-    const concatContents = renderedSegments.map((segment) => `file '${quoteConcatPath(segment.filePath)}'`).join("\\n") + "\\n";
+    const concatContents = renderedSegments.map((segment) => `file '${quoteConcatPath(segment.filePath)}'`).join("\n") + "\n";
     await writeFile(concatListPath, concatContents, "utf8");
     await runFfmpeg([
       "-hide_banner", "-loglevel", "error", "-y",
