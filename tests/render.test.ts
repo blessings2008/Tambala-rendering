@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { getDimensions, renderTextVideo } from "../src/render";
+import { getDimensions, renderScenesVideo, renderTextVideo } from "../src/render";
 
 const temporaryDirectories: string[] = [];
 
@@ -43,6 +43,28 @@ describe("FFmpeg rendering", () => {
     expect(fileInfo.size).toBeGreaterThan(1_000);
     expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
   }, 30_000);
+  it("combines multiple scenes into one MP4 and cleans up intermediate segments", async () => {
+    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-scenes-"));
+    temporaryDirectories.push(outputDirectory);
+
+    const result = await renderScenesVideo({
+      format: "vertical",
+      scenes: [
+        { title: "Opening scene", subtitle: "Hook", durationSeconds: 3 },
+        { title: "Closing scene", subtitle: "Call to action", durationSeconds: 3 }
+      ]
+    }, outputDirectory);
+
+    const file = await readFile(result.filePath);
+    const fileInfo = await stat(result.filePath);
+    expect(result.durationSeconds).toBe(6);
+    expect(fileInfo.size).toBeGreaterThan(1_000);
+    expect(file.subarray(4, 8).toString("ascii")).toBe("ftyp");
+    const files = await (await import("node:fs/promises")).readdir(outputDirectory);
+    expect(files.filter((name) => name.endsWith(".mp4"))).toEqual([result.id + ".mp4"]);
+    expect(files.some((name) => name.includes("concat"))).toBe(false);
+  }, 60_000);
+
   it("creates an MP4 using a supplied base64 PNG background", async () => {
     const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "tambala-render-image-"));
     temporaryDirectories.push(outputDirectory);
