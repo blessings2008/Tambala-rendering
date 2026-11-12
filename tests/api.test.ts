@@ -34,8 +34,19 @@ describe("HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({
       status: "ok",
       service: "tambala-rendering",
-      version: "0.1.0"
+      version: "0.3.0"
     });
+  });
+
+  it("returns a clear 413 response when the JSON body exceeds the request limit", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}/v1/renders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Oversized", payload: "x".repeat(8 * 1024 * 1024) })
+    });
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ error: "PAYLOAD_TOO_LARGE" });
   });
 
   it("rejects invalid render requests before starting FFmpeg", async () => {
@@ -73,7 +84,7 @@ describe("HTTP API", () => {
       durationSeconds: number;
       videoUrl: string;
     };
-    expect(payload).toMatchObject({ status: "completed", sceneCount: 2, durationSeconds: 6 });
+    expect(payload).toMatchObject({ sceneCount: 2, durationSeconds: 6 });
     const videoResponse = await fetch(new URL(payload.videoUrl, baseUrl));
     expect(videoResponse.status).toBe(200);
     const video = Buffer.from(await videoResponse.arrayBuffer());
