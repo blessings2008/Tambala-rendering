@@ -38,6 +38,17 @@ describe("HTTP API", () => {
     });
   });
 
+  it("returns a clear 413 response when the JSON body exceeds the request limit", async () => {
+    const baseUrl = await startServer();
+    const response = await fetch(`${baseUrl}/v1/renders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Oversized", payload: "x".repeat(8 * 1024 * 1024) })
+    });
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ error: "PAYLOAD_TOO_LARGE" });
+  });
+
   it("rejects invalid render requests before starting FFmpeg", async () => {
     const baseUrl = await startServer();
     const response = await fetch(`${baseUrl}/v1/renders`, {
